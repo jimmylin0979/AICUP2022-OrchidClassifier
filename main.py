@@ -1,6 +1,3 @@
-# 
-import fire
-
 #
 import torch
 import torch.nn as nn
@@ -48,6 +45,7 @@ def main(**kwargs):
     writer = SummaryWriter()
 
     # Step 2 : 
+    print(config.model_name)
     model = getattr(models, config.model_name)(config)
     if config.load_model:
         model.load_state_dict(torch.load(config.model_path))
@@ -86,7 +84,9 @@ def main(**kwargs):
         # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
     ds = OrchidDataSet(config.trainset_path, transform_set=transform_set)
-    ds_unlabeled = OrchidDataSet(config.unlabeledset_path, transform_set=transform_set)
+    ds_unlabeled = None
+    if config.do_semi:
+        ds_unlabeled = OrchidDataSet(config.unlabeledset_path, transform_set=transform_set)
 
     # Step 3
     # Deal with imbalance dataset
@@ -362,12 +362,6 @@ if __name__ == '__main__':
     # })
 
     main()
-
-    # Train model via command below : 
-    #       python main.py main --visualization=True
-
-    # Inference model (test()) via command below : 
-    #       python main.py test --output_file_path=predictions.csv
 
 
 ###################################################################################

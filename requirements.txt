@@ -1,37 +1,24 @@
-certifi==2021.10.8
-charset-normalizer==2.0.12
-colorama==0.4.4
-cycler==0.11.0
-filelock==3.7.0
-fire==0.4.0
-fonttools==4.33.3
-huggingface-hub==0.6.0
-idna==3.3
-joblib==1.1.0
-kiwisolver==1.4.2
-matplotlib==3.5.2
-numpy @ file:///D:/bld/numpy_1651020737746/work
-packaging==21.3
-Pillow @ file:///D:/bld/pillow_1649818154638/work
-pyparsing==3.0.9
-python-dateutil==2.8.2
-PyYAML==6.0
-regex==2022.4.24
-requests==2.27.1
-scikit-learn==1.1.0
-scipy==1.8.0
-six==1.16.0
-termcolor==1.1.0
-threadpoolctl==3.1.0
+# requirement for Hugging face
+huggingface-hub
+transformers
+
+# requirement for Other utilizations, including visualizariob, beautify
+matplotlib
+requests
+tqdm
+
+scipy
+numpy
+Pillow
+scikit-learn
+
+# requirement for 
+pthflops
+torch-ema
+
+# requirement for Pytorch, Torchvision
 tokenizers==0.12.1
-torch==1.10.1
-torch-ema==0.3
-torchaudio==0.10.1
-torchvision==0.11.2
-tensorboard
-tqdm==4.64.0
-transformers==4.19.1
-typing_extensions @ file:///home/conda/feedstock_root/build_artifacts/typing_extensions_1650370875435/work
-urllib3==1.26.9
-wincertstore==0.2
-ptflops
+torch>=1.10.1
+torchaudio>=0.10.1
+torchvision>=0.11.2
+tensorboard>=2.9.0
