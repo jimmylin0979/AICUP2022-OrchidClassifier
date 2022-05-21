@@ -1,4 +1,5 @@
 #
+from dis import pretty_flags
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -13,11 +14,11 @@ from models import BaseModule
 from config import DefualtConfig
 
 
-class ViT(nn.Module):
+class STN_ViT(nn.Module):
 
     def __init__(self, config: DefualtConfig):
 
-        super(ViT, self).__init__()
+        super(STN_ViT, self).__init__()
 
         self.config = config
         self.num_labels = config.num_classes
@@ -52,17 +53,15 @@ class ViT(nn.Module):
         )
         # Initialize the weights/bias with identity transformation
         self.fc_loc[-1].weight.data.zero_()
-        self.fc_loc[-1].bias.data.copy_(torch.tensor([1,
-                                        0, 0, 0, 1, 0], dtype=torch.float))
+        self.fc_loc[-1].bias.data.copy_(torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float))
 
         ###############################################
         # ViT
-        self.feature_extractor = ViTFeatureExtractor.from_pretrained(
-            config.pretrained_model)
-        self.vit = ViTModel.from_pretrained(config.pretrained_model)
+        pretrained_model = 'google/vit-base-patch16-224-in21k'
+        self.feature_extractor = ViTFeatureExtractor.from_pretrained(pretrained_model)
+        self.vit = ViTModel.from_pretrained(pretrained_model)
         self.dropout = nn.Dropout(0.1)
-        self.classifier = nn.Linear(
-            self.vit.config.hidden_size, self.num_labels)
+        self.classifier = nn.Linear(self.vit.config.hidden_size, self.num_labels)
 
     def feature_extract(self, imgs):
         '''
@@ -115,17 +114,8 @@ class ViT(nn.Module):
 
         # ViT
         x = self.vit(pixel_values=x)
+        # x = torch.mean(x.last_hidden_state[:, ], 1)
         x = self.dropout(x.last_hidden_state[:, 0])
         logits = self.classifier(x)
-
-        # # loss = None
-        # # if labels is not None:
-        # #     loss_fct = nn.CrossEntropyLoss()
-        # #     loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
-
-        # # if loss is not None:
-        # #     return logits, loss.item()
-        # # else:
-        # #     return logits, None
 
         return logits

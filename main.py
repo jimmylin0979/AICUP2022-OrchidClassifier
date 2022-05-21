@@ -21,6 +21,9 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 
 #
+from ptflops import get_model_complexity_info
+
+#
 from tqdm import tqdm
 
 #
@@ -31,7 +34,6 @@ import models
 from data.dataset import OrchidDataSet
 from config import DefualtConfig
 from utils import get_confidence_score
-from utils.losses import LabelSmoothingCrossEntropy
 from utils.self_supervised import get_pseudo_labels
 from optim.scheduler import GradualWarmupScheduler
 
@@ -51,6 +53,14 @@ def main(**kwargs):
         model.load_state_dict(torch.load(config.model_path))
     model.to(device)
 
+    # 
+    # Metrics : FLOPs, Params
+    resize = (224, 224) if config.model_name != 'ConvNeXt' else (384, 384)
+    macs, params = get_model_complexity_info(model, (3, resize[0], resize[1]), as_strings=True, print_per_layer_stat=False, verbose=False)
+    print('pthflops : ')
+    print('{:<30}  {:<8}'.format('Computational complexity: ', macs))
+    print('{:<30}  {:<8}'.format('Number of parameters: ', params))
+
     # Step 3 : DataSets}
     # Data Augumentation
     transform_set = [
@@ -61,6 +71,7 @@ def main(**kwargs):
         # transforms.RandAugment()
         # transforms.AutoAugment(transforms.AutoAugmentPolicy.IMAGENET)
     ]
+
     transform_set = transforms.Compose([
         # transforms.Grayscale(num_output_channels=3),
 
@@ -107,8 +118,6 @@ def main(**kwargs):
     best_epoch, best_loss = 0, 1e100
     nonImprove_epochs = 0
 
-    do_semi = True
-
     # this zero gradient update is needed to avoid a warning message, issue #8.
     optimizer.zero_grad()
     optimizer.step()
@@ -129,7 +138,7 @@ def main(**kwargs):
             torch.save(model.state_dict(), f'{config.model_path[:-4]}_normal.pth')
             torch.save(ema.state_dict(), f'{config.ema_path[:-4]}_normal.pth')
             
-        if epoch >= 35 and do_semi:
+        if epoch >= 35 and config.do_semi:
             # Obtain pseudo-labels for unlabeled data using trained model.
             print(f"[ Train | Start pseudo labeling]")
             pseudo_set = get_pseudo_labels(model, ds_unlabeled)

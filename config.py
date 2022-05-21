@@ -3,14 +3,17 @@ class DefualtConfig(object):
 
     ###################################################################
     # Model
-    model_name = 'ViT'
+    # model_name = 'STN_ViT'
+    # model_name = 'ConvNeXt'
+    model_name = 'Swin_ViT'
+    
     model_path = './model.pth'
     ema_path = './ema.pth'
     load_model = False
     num_classes = 219
 
     # Model : ViT
-    pretrained_model = 'google/vit-base-patch16-224-in21k'
+    # pretrained_model = 'google/vit-base-patch16-224-in21k'
 
     ###################################################################
     # Training
@@ -18,7 +21,9 @@ class DefualtConfig(object):
     num_epochs = 100
     earlyStop_interval = 25
 
-    batch_size = 16
+    do_semi = False
+
+    batch_size = 1
     lr = 0.0002
     lr_warmup_epoch = 0
 

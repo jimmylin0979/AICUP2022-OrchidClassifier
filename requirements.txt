@@ -34,3 +34,4 @@ transformers==4.19.1
 typing_extensions @ file:///home/conda/feedstock_root/build_artifacts/typing_extensions_1650370875435/work
 urllib3==1.26.9
 wincertstore==0.2
+ptflops

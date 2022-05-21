@@ -1,4 +1,7 @@
 from .STN_ViT import *
+from .ConvNeXt import *
+from .Swin_ViT import *
+
 # import importlib
 # import os
 
