@@ -3,9 +3,9 @@ class DefualtConfig(object):
 
     ###################################################################
     # Model
-    # model_name = 'STN_ViT'
+    model_name = 'STN_ViT'
     # model_name = 'ConvNeXt'
-    model_name = 'Swin_ViT'
+    # model_name = 'Swin_ViT'
     
     model_path = './model.pth'
     ema_path = './ema.pth'
@@ -18,8 +18,8 @@ class DefualtConfig(object):
     ###################################################################
     # Training
     start_epoch = 0
-    num_epochs = 30
-    earlyStop_interval = 15
+    num_epochs = 100
+    earlyStop_interval = 20
 
     do_semi = False
 

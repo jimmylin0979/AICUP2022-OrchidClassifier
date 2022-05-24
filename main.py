@@ -65,7 +65,7 @@ def main(**kwargs):
     # Step 3 : DataSets}
     # Data Augumentation
     transform_set = [
-        # transforms.RandomResizedCrop((224)),
+        transforms.RandomResizedCrop((resize[0])),
         # transforms.ColorJitter(brightness=0.5),
         transforms.RandomHorizontalFlip(p=0.5),
         transforms.RandomRotation(degrees=15),
@@ -86,7 +86,7 @@ def main(**kwargs):
         # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 
         # 
-        # transforms.RandomErasing()
+        transforms.RandomErasing()
     ])
     ds = OrchidDataSet(config.trainset_path, transform_set=transform_set)
     ds_unlabeled = None
@@ -112,8 +112,8 @@ def main(**kwargs):
 
     # scheduler_warmup is chained with schduler_steplr
     # scheduler_steplr = StepLR(optimizer, step_size=10, gamma=0.1)
-    # scheduler_steplr = CosineAnnealingLR(optimizer, T_max=20)
-    scheduler_steplr = ExponentialLR(optimizer, gamma=0.9)
+    scheduler_steplr = CosineAnnealingLR(optimizer, T_max=20)
+    # scheduler_steplr = ExponentialLR(optimizer, gamma=0.9)
     # if config.lr_warmup_epoch > 0:
     scheduler_warmup = GradualWarmupScheduler(optimizer, multiplier=1, total_epoch=config.lr_warmup_epoch, after_scheduler=scheduler_steplr)
 
@@ -275,7 +275,7 @@ def train(model, train_loader, criterion, optimizer, ema):
         imgs = imgs.to(device)
         labels = labels.to(device)
 
-        imgs, targets_a, targets_b, lam = mixup_data(imgs, labels, use_cuda=torch.cuda.is_available())
+        imgs, targets_a, targets_b, lam = mixup_data(imgs, labels, alpha=0.2, use_cuda=torch.cuda.is_available())
         imgs, targets_a, targets_b = map(Variable, (imgs, targets_a, targets_b))
 
         # Forward the data. (Make sure data and model are on the same device.)
