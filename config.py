@@ -12,6 +12,12 @@ class DefualtConfig(object):
     load_model = False
     num_classes = 219
 
+    # only one of them can be true
+    do_cutMix = True
+    do_MixUp = False
+
+    cutMix_alpha = 1.0
+
     # Model : ViT
     # pretrained_model = 'google/vit-base-patch16-224-in21k'
 

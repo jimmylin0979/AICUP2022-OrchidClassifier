@@ -34,6 +34,7 @@ from data.dataset import OrchidDataSet
 from config import DefualtConfig
 from utils import get_confidence_score
 from utils import mixup_data, mixup_criterion
+from utils import CutMixCollator, CutMixCriterion
 from utils.self_supervised import get_pseudo_labels
 from optim.scheduler import GradualWarmupScheduler
 
@@ -132,81 +133,84 @@ def main(**kwargs):
 
     for epoch in range(config.start_epoch, config.start_epoch + config.num_epochs):
 
-        try:
+        print('=' * 150)
 
-            print('=' * 150)
+        # 
+        # if config.lr_warmup_epoch > 0:
+        scheduler_warmup.step(epoch + 1)
 
-            # 
-            # if config.lr_warmup_epoch > 0:
-            scheduler_warmup.step(epoch + 1)
+        writer.add_scalar("lr", optimizer.param_groups[0]["lr"], epoch)
+        print(f'Epoch {epoch}, LR = {optimizer.param_groups[0]["lr"]}')
 
-            writer.add_scalar("lr", optimizer.param_groups[0]["lr"], epoch)
-            print(f'Epoch {epoch}, LR = {optimizer.param_groups[0]["lr"]}')
-
-            # 
-            train_loader = DataLoader(ds_train, batch_size=config.batch_size, shuffle=True, num_workers=config.num_workers, pin_memory=True)
-            if epoch == 35:
-                torch.save(model.state_dict(), f'{config.model_path[:-4]}_normal.pth')
-                torch.save(ema.state_dict(), f'{config.ema_path[:-4]}_normal.pth')
-                
-            if epoch >= 35 and config.do_semi:
-                # Obtain pseudo-labels for unlabeled data using trained model.
-                print(f"[ Train | Start pseudo labeling]")
-                pseudo_set = get_pseudo_labels(model, ds_unlabeled)
-
-                if pseudo_set != None:
-                    # Construct a new dataset and a data loader for training.
-                    # This is used in semi-supervised learning only.
-                    concat_dataset = ConcatDataset([ds_train, pseudo_set])
-                    train_loader = DataLoader(concat_dataset, batch_size=config.batch_size, shuffle=True, num_workers=config.num_workers, pin_memory=True)
-                    
-            valid_loader = DataLoader(ds_valid, batch_size=config.batch_size, shuffle=False, num_workers=config.num_workers, pin_memory=True)
-
-            # 
-            train_acc, train_loss = train(model, train_loader, criterion, optimizer, ema)
-            print(f"[ Train | {epoch + 1:03d}/{config.num_epochs:03d} ] loss = {train_loss:.5f}, acc = {train_acc:.5f}")
-            
-            # 
-            valid_acc, valid_loss = valid(model, valid_loader, criterion, None)
-            print(f"[ Valid | {epoch + 1:03d}/{config.num_epochs:03d} ] loss = {valid_loss:.5f}, acc = {valid_acc:.5f}")
-            
-            # 
-            valid_acc_ema, valid_loss_ema = valid(model, valid_loader, criterion, ema)
-            print(f"[ Valid | {epoch + 1:03d}/{config.num_epochs:03d} ] loss = {valid_loss_ema:.5f}, acc = {valid_acc_ema:.5f} (EMA)")
-            
-
-            # Append the training statstics into history
-            history['train_acc'].append(train_acc)
-            history['valid_acc'].append(valid_acc)
-            history['train_loss'].append(train_loss)
-            history['valid_loss'].append(valid_loss)
-
-            # Tensorboard Visualization
-            writer.add_scalar("Train/train_acc", train_acc, epoch)
-            writer.add_scalar("Valid/valid_acc", valid_acc, epoch)
-            writer.add_scalar("Valid/valid_acc_ema", valid_acc_ema, epoch)
-            writer.add_scalar("Train/train_loss", train_loss, epoch)
-            writer.add_scalar("Valid/valid_loss", valid_loss, epoch)
-            writer.add_scalar("Valid/valid_loss_ema", valid_loss_ema, epoch)
-
-            # EarlyStop
-            # if the model improves, save a checkpoint at this epoch
-            if valid_loss_ema < best_loss:
-                best_loss = valid_loss_ema
-                best_epoch = epoch
-                torch.save(model.state_dict(), config.model_path)
-                torch.save(ema.state_dict(), config.ema_path)
-                print(f'Saving model with loss {valid_loss_ema:.4f}'.format(valid_loss_ema))
-                nonImprove_epochs = 0
-            else:
-                nonImprove_epochs += 1
-
-            # Stop training if your model stops improving for "config['early_stop']" epochs.    
-            if nonImprove_epochs >= config.earlyStop_interval:
-                break
+        # 
+        collator = torch.utils.data.dataloader.default_collate
+        if config.do_cutMix:
+            collator = CutMixCollator(config.cutMix_alpha)
         
-        except Exception as ex:
-            pass
+        train_loader = DataLoader(ds_train, batch_size=config.batch_size, shuffle=True, collate_fn=collator, num_workers=config.num_workers, pin_memory=True)
+        if epoch == 35:
+            torch.save(model.state_dict(), f'{config.model_path[:-4]}_normal.pth')
+            torch.save(ema.state_dict(), f'{config.ema_path[:-4]}_normal.pth')
+            
+        if epoch >= 35 and config.do_semi:
+            # Obtain pseudo-labels for unlabeled data using trained model.
+            print(f"[ Train | Start pseudo labeling]")
+            pseudo_set = get_pseudo_labels(model, ds_unlabeled)
+
+            if pseudo_set != None:
+                # Construct a new dataset and a data loader for training.
+                # This is used in semi-supervised learning only.
+                concat_dataset = ConcatDataset([ds_train, pseudo_set])
+                train_loader = DataLoader(concat_dataset, batch_size=config.batch_size, shuffle=True, collate_fn=collator, num_workers=config.num_workers, pin_memory=True)
+                
+        valid_loader = DataLoader(ds_valid, batch_size=config.batch_size, shuffle=False, num_workers=config.num_workers, pin_memory=True)
+
+        # 
+        train_criterion = criterion
+        if config.do_cutMix:
+            train_criterion = CutMixCriterion(reduction='mean')
+
+        train_acc, train_loss = train(model, train_loader, train_criterion, optimizer, ema)
+        print(f"[ Train | {epoch + 1:03d}/{config.num_epochs:03d} ] loss = {train_loss:.5f}, acc = {train_acc:.5f}")
+        
+        # 
+        valid_acc, valid_loss = valid(model, valid_loader, criterion, None)
+        print(f"[ Valid | {epoch + 1:03d}/{config.num_epochs:03d} ] loss = {valid_loss:.5f}, acc = {valid_acc:.5f}")
+        
+        # 
+        valid_acc_ema, valid_loss_ema = valid(model, valid_loader, criterion, ema)
+        print(f"[ Valid | {epoch + 1:03d}/{config.num_epochs:03d} ] loss = {valid_loss_ema:.5f}, acc = {valid_acc_ema:.5f} (EMA)")
+        
+
+        # Append the training statstics into history
+        history['train_acc'].append(train_acc)
+        history['valid_acc'].append(valid_acc)
+        history['train_loss'].append(train_loss)
+        history['valid_loss'].append(valid_loss)
+
+        # Tensorboard Visualization
+        writer.add_scalar("Train/train_acc", train_acc, epoch)
+        writer.add_scalar("Valid/valid_acc", valid_acc, epoch)
+        writer.add_scalar("Valid/valid_acc_ema", valid_acc_ema, epoch)
+        writer.add_scalar("Train/train_loss", train_loss, epoch)
+        writer.add_scalar("Valid/valid_loss", valid_loss, epoch)
+        writer.add_scalar("Valid/valid_loss_ema", valid_loss_ema, epoch)
+
+        # EarlyStop
+        # if the model improves, save a checkpoint at this epoch
+        if valid_loss_ema < best_loss:
+            best_loss = valid_loss_ema
+            best_epoch = epoch
+            torch.save(model.state_dict(), config.model_path)
+            torch.save(ema.state_dict(), config.ema_path)
+            print(f'Saving model with loss {valid_loss_ema:.4f}'.format(valid_loss_ema))
+            nonImprove_epochs = 0
+        else:
+            nonImprove_epochs += 1
+
+        # Stop training if your model stops improving for "config['early_stop']" epochs.    
+        if nonImprove_epochs >= config.earlyStop_interval:
+            break
 
     writer.flush()
     writer.close()
@@ -273,10 +277,19 @@ def train(model, train_loader, criterion, optimizer, ema):
         # labels = (batch_size)
         imgs, labels = batch
         imgs = imgs.to(device)
-        labels = labels.to(device)
 
-        imgs, targets_a, targets_b, lam = mixup_data(imgs, labels, alpha=0.2, use_cuda=torch.cuda.is_available())
-        imgs, targets_a, targets_b = map(Variable, (imgs, targets_a, targets_b))
+        if config.do_cutMix:
+            if isinstance(labels, (tuple, list)):
+                targets1, targets2, lam = labels
+                labels = (targets1.to(device), targets2.to(device), lam)
+            else:
+                labels = labels.to(device)
+
+        # labels = labels.to(device)
+
+        if config.do_MixUp:
+            imgs, targets_a, targets_b, lam = mixup_data(imgs, labels, alpha=0.2, use_cuda=torch.cuda.is_available())
+            imgs, targets_a, targets_b = map(Variable, (imgs, targets_a, targets_b))
 
         # Forward the data. (Make sure data and model are on the same device.)
         logits = model(imgs.to(device))
@@ -284,7 +297,14 @@ def train(model, train_loader, criterion, optimizer, ema):
         # Calculate the cross-entropy loss.
         # We don't need to apply softmax before computing cross-entropy as it is done automatically.
         # loss = criterion(logits, labels.to(device))
-        loss = mixup_criterion(criterion, logits, targets_a, targets_b, lam)
+
+        loss = None
+        if config.do_MixUp:
+            loss = mixup_criterion(criterion, logits, targets_a, targets_b, lam)
+        elif config.do_cutMix:
+            loss = criterion(logits, labels)
+        else:
+            loss = criterion(logits, labels.to(device))
 
         # Gradients stored in the parameters in the previous step should be cleared out first.
         optimizer.zero_grad()
@@ -309,7 +329,9 @@ def train(model, train_loader, criterion, optimizer, ema):
         # grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=10)
 
         # Compute the accuracy for current batch.
-        acc = (logits.argmax(dim=-1) == labels.to(device)).float().mean()
+        acc = torch.tensor([0])
+        if not config.do_cutMix:        
+            acc = (logits.argmax(dim=-1) == labels.to(device)).float().mean()
 
     return acc.item(), loss.item()
 
