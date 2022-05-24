@@ -18,13 +18,13 @@ class DefualtConfig(object):
     ###################################################################
     # Training
     start_epoch = 0
-    num_epochs = 50
+    num_epochs = 30
     earlyStop_interval = 15
 
     do_semi = False
 
     batch_size = 16
-    lr = 0.0002
+    lr = 5e-5
     lr_warmup_epoch = 0
 
     ###################################################################

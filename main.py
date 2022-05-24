@@ -1,9 +1,11 @@
 #
 import torch
 import torch.nn as nn
+from torch.autograd import Variable
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, ConcatDataset
 from torch.utils.tensorboard import SummaryWriter
-from torch.optim.lr_scheduler import StepLR, ExponentialLR
+from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR, ExponentialLR
 
 #
 from torchvision import transforms
@@ -31,6 +33,7 @@ import models
 from data.dataset import OrchidDataSet
 from config import DefualtConfig
 from utils import get_confidence_score
+from utils import mixup_data, mixup_criterion
 from utils.self_supervised import get_pseudo_labels
 from optim.scheduler import GradualWarmupScheduler
 
@@ -71,10 +74,9 @@ def main(**kwargs):
     ]
 
     transform_set = transforms.Compose([
-        # transforms.Grayscale(num_output_channels=3),
 
         # # Reorder transform randomly
-        # transforms.RandomOrder(transform_set),
+        transforms.RandomOrder(transform_set),
 
         # Resize the image into a fixed shape
         transforms.Resize((224, 224)),
@@ -82,6 +84,9 @@ def main(**kwargs):
         # ToTensor() should be the last one of the transforms.
         transforms.ToTensor(),
         # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+
+        # 
+        # transforms.RandomErasing()
     ])
     ds = OrchidDataSet(config.trainset_path, transform_set=transform_set)
     ds_unlabeled = None
@@ -97,7 +102,8 @@ def main(**kwargs):
     criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.1)
     # criterion = LabelSmoothingCrossEntropy()
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=config.lr, weight_decay=1e-8)
+    # optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
     # optimizer = torch.optim.SGD(model.parameters(), lr=config.lr, momentum=0.9)
 
     ema = ExponentialMovingAverage(model.parameters(), decay=0.995)
@@ -105,9 +111,11 @@ def main(**kwargs):
         ema = ema.load_state_dict(torch.load(config.ema_path))
 
     # scheduler_warmup is chained with schduler_steplr
-    scheduler_steplr = StepLR(optimizer, step_size=20, gamma=0.5)
-    if config.lr_warmup_epoch > 0:
-        scheduler_warmup = GradualWarmupScheduler(optimizer, multiplier=1, total_epoch=config.lr_warmup_epoch, after_scheduler=scheduler_steplr)
+    # scheduler_steplr = StepLR(optimizer, step_size=10, gamma=0.1)
+    # scheduler_steplr = CosineAnnealingLR(optimizer, T_max=20)
+    scheduler_steplr = ExponentialLR(optimizer, gamma=0.9)
+    # if config.lr_warmup_epoch > 0:
+    scheduler_warmup = GradualWarmupScheduler(optimizer, multiplier=1, total_epoch=config.lr_warmup_epoch, after_scheduler=scheduler_steplr)
 
     # Step 4
     # train_loader, valid_loader = get_loader(ds)
@@ -124,75 +132,81 @@ def main(**kwargs):
 
     for epoch in range(config.start_epoch, config.start_epoch + config.num_epochs):
 
-        print('=' * 150)
+        try:
 
-        # 
-        if config.lr_warmup_epoch > 0:
+            print('=' * 150)
+
+            # 
+            # if config.lr_warmup_epoch > 0:
             scheduler_warmup.step(epoch + 1)
-        
-        print(f'Epoch {epoch}, LR = {optimizer.param_groups[0]["lr"]}')
 
-        # 
-        train_loader = DataLoader(ds_train, batch_size=config.batch_size, shuffle=True, num_workers=config.num_workers, pin_memory=True)
-        if epoch == 35:
-            torch.save(model.state_dict(), f'{config.model_path[:-4]}_normal.pth')
-            torch.save(ema.state_dict(), f'{config.ema_path[:-4]}_normal.pth')
-            
-        if epoch >= 35 and config.do_semi:
-            # Obtain pseudo-labels for unlabeled data using trained model.
-            print(f"[ Train | Start pseudo labeling]")
-            pseudo_set = get_pseudo_labels(model, ds_unlabeled)
+            writer.add_scalar("lr", optimizer.param_groups[0]["lr"], epoch)
+            print(f'Epoch {epoch}, LR = {optimizer.param_groups[0]["lr"]}')
 
-            if pseudo_set != None:
-                # Construct a new dataset and a data loader for training.
-                # This is used in semi-supervised learning only.
-                concat_dataset = ConcatDataset([ds_train, pseudo_set])
-                train_loader = DataLoader(concat_dataset, batch_size=config.batch_size, shuffle=True, num_workers=config.num_workers, pin_memory=True)
+            # 
+            train_loader = DataLoader(ds_train, batch_size=config.batch_size, shuffle=True, num_workers=config.num_workers, pin_memory=True)
+            if epoch == 35:
+                torch.save(model.state_dict(), f'{config.model_path[:-4]}_normal.pth')
+                torch.save(ema.state_dict(), f'{config.ema_path[:-4]}_normal.pth')
                 
-        valid_loader = DataLoader(ds_valid, batch_size=config.batch_size, shuffle=False, num_workers=config.num_workers, pin_memory=True)
+            if epoch >= 35 and config.do_semi:
+                # Obtain pseudo-labels for unlabeled data using trained model.
+                print(f"[ Train | Start pseudo labeling]")
+                pseudo_set = get_pseudo_labels(model, ds_unlabeled)
 
-        # 
-        train_acc, train_loss = train(model, train_loader, criterion, optimizer, ema)
-        print(f"[ Train | {epoch + 1:03d}/{config.num_epochs:03d} ] loss = {train_loss:.5f}, acc = {train_acc:.5f}")
+                if pseudo_set != None:
+                    # Construct a new dataset and a data loader for training.
+                    # This is used in semi-supervised learning only.
+                    concat_dataset = ConcatDataset([ds_train, pseudo_set])
+                    train_loader = DataLoader(concat_dataset, batch_size=config.batch_size, shuffle=True, num_workers=config.num_workers, pin_memory=True)
+                    
+            valid_loader = DataLoader(ds_valid, batch_size=config.batch_size, shuffle=False, num_workers=config.num_workers, pin_memory=True)
+
+            # 
+            train_acc, train_loss = train(model, train_loader, criterion, optimizer, ema)
+            print(f"[ Train | {epoch + 1:03d}/{config.num_epochs:03d} ] loss = {train_loss:.5f}, acc = {train_acc:.5f}")
+            
+            # 
+            valid_acc, valid_loss = valid(model, valid_loader, criterion, None)
+            print(f"[ Valid | {epoch + 1:03d}/{config.num_epochs:03d} ] loss = {valid_loss:.5f}, acc = {valid_acc:.5f}")
+            
+            # 
+            valid_acc_ema, valid_loss_ema = valid(model, valid_loader, criterion, ema)
+            print(f"[ Valid | {epoch + 1:03d}/{config.num_epochs:03d} ] loss = {valid_loss_ema:.5f}, acc = {valid_acc_ema:.5f} (EMA)")
+            
+
+            # Append the training statstics into history
+            history['train_acc'].append(train_acc)
+            history['valid_acc'].append(valid_acc)
+            history['train_loss'].append(train_loss)
+            history['valid_loss'].append(valid_loss)
+
+            # Tensorboard Visualization
+            writer.add_scalar("Train/train_acc", train_acc, epoch)
+            writer.add_scalar("Valid/valid_acc", valid_acc, epoch)
+            writer.add_scalar("Valid/valid_acc_ema", valid_acc_ema, epoch)
+            writer.add_scalar("Train/train_loss", train_loss, epoch)
+            writer.add_scalar("Valid/valid_loss", valid_loss, epoch)
+            writer.add_scalar("Valid/valid_loss_ema", valid_loss_ema, epoch)
+
+            # EarlyStop
+            # if the model improves, save a checkpoint at this epoch
+            if valid_loss_ema < best_loss:
+                best_loss = valid_loss_ema
+                best_epoch = epoch
+                torch.save(model.state_dict(), config.model_path)
+                torch.save(ema.state_dict(), config.ema_path)
+                print(f'Saving model with loss {valid_loss_ema:.4f}'.format(valid_loss_ema))
+                nonImprove_epochs = 0
+            else:
+                nonImprove_epochs += 1
+
+            # Stop training if your model stops improving for "config['early_stop']" epochs.    
+            if nonImprove_epochs >= config.earlyStop_interval:
+                break
         
-        # 
-        valid_acc, valid_loss = valid(model, valid_loader, criterion, None)
-        print(f"[ Valid | {epoch + 1:03d}/{config.num_epochs:03d} ] loss = {valid_loss:.5f}, acc = {valid_acc:.5f}")
-        
-        # 
-        valid_acc_ema, valid_loss_ema = valid(model, valid_loader, criterion, ema)
-        print(f"[ Valid | {epoch + 1:03d}/{config.num_epochs:03d} ] loss = {valid_loss:.5f}, acc = {valid_acc:.5f} (EMA)")
-        
-
-        # Append the training statstics into history
-        history['train_acc'].append(train_acc)
-        history['valid_acc'].append(valid_acc)
-        history['train_loss'].append(train_loss)
-        history['valid_loss'].append(valid_loss)
-
-        # Tensorboard Visualization
-        writer.add_scalar("Train/train_acc", train_acc, epoch)
-        writer.add_scalar("Valid/valid_acc", valid_acc, epoch)
-        writer.add_scalar("Valid/valid_acc_ema", valid_acc_ema, epoch)
-        writer.add_scalar("Train/train_loss", train_loss, epoch)
-        writer.add_scalar("Valid/valid_loss", valid_loss, epoch)
-        writer.add_scalar("Valid/valid_loss_ema", valid_loss_ema, epoch)
-
-        # EarlyStop
-        # if the model improves, save a checkpoint at this epoch
-        if valid_loss < best_loss:
-            best_loss = valid_loss
-            best_epoch = epoch
-            torch.save(model.state_dict(), config.model_path)
-            torch.save(ema.state_dict(), config.ema_path)
-            print(f'Saving model with loss {valid_loss:.4f}'.format(valid_loss))
-            nonImprove_epochs = 0
-        else:
-            nonImprove_epochs += 1
-
-        # Stop training if your model stops improving for "config['early_stop']" epochs.    
-        if nonImprove_epochs >= config.earlyStop_interval:
-            break
+        except Exception as ex:
+            pass
 
     writer.flush()
     writer.close()
@@ -258,13 +272,19 @@ def train(model, train_loader, criterion, optimizer, ema):
         # imgs = (batch_size, 3, 224, 224)
         # labels = (batch_size)
         imgs, labels = batch
+        imgs = imgs.to(device)
+        labels = labels.to(device)
+
+        imgs, targets_a, targets_b, lam = mixup_data(imgs, labels, use_cuda=torch.cuda.is_available())
+        imgs, targets_a, targets_b = map(Variable, (imgs, targets_a, targets_b))
 
         # Forward the data. (Make sure data and model are on the same device.)
         logits = model(imgs.to(device))
 
         # Calculate the cross-entropy loss.
         # We don't need to apply softmax before computing cross-entropy as it is done automatically.
-        loss = criterion(logits, labels.to(device))
+        # loss = criterion(logits, labels.to(device))
+        loss = mixup_criterion(criterion, logits, targets_a, targets_b, lam)
 
         # Gradients stored in the parameters in the previous step should be cleared out first.
         optimizer.zero_grad()
@@ -293,7 +313,7 @@ def train(model, train_loader, criterion, optimizer, ema):
 
     return acc.item(), loss.item()
 
-def valid(model, valid_loader, criterion, ema):
+def valid(model, valid_loader, criterion, ema=None):
     # ---------- Validation ----------
     # Make sure the model is in eval mode so that some modules like dropout are disabled and work normally.
     model.eval()
