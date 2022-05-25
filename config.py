@@ -3,9 +3,9 @@ class DefualtConfig(object):
 
     ###################################################################
     # Model
-    model_name = 'STN_ViT'
+    # model_name = 'STN_ViT'
     # model_name = 'ConvNeXt'
-    # model_name = 'Swin_ViT'
+    model_name = 'Swin_ViT'
     
     model_path = 'model.pth'
     ema_path = 'ema.pth'

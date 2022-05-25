@@ -30,6 +30,7 @@ import argparse
 
 #
 import os
+import shutil
 
 #
 import models
@@ -83,7 +84,7 @@ def main(logdir):
         transforms.RandomOrder(transform_set),
 
         # Resize the image into a fixed shape
-        transforms.Resize((224, 224)),
+        transforms.Resize(resize),
 
         # ToTensor() should be the last one of the transforms.
         transforms.ToTensor(),
@@ -116,8 +117,8 @@ def main(logdir):
 
     # scheduler_warmup is chained with schduler_steplr
     # scheduler_steplr = StepLR(optimizer, step_size=10, gamma=0.1)
-    # scheduler_steplr = CosineAnnealingLR(optimizer, T_max=20)
-    scheduler_steplr = ExponentialLR(optimizer, gamma=0.9)
+    scheduler_steplr = CosineAnnealingLR(optimizer, T_max=20)
+    # scheduler_steplr = ExponentialLR(optimizer, gamma=0.9)
     # if config.lr_warmup_epoch > 0:
     scheduler_warmup = GradualWarmupScheduler(optimizer, multiplier=1, total_epoch=config.lr_warmup_epoch, after_scheduler=scheduler_steplr)
 
@@ -209,6 +210,7 @@ def main(logdir):
             best_epoch = epoch
             torch.save(model.state_dict(), f'{logdir}/{config.model_path}')
             torch.save(ema.state_dict(), f'{logdir}/{config.ema_path}')
+            get_confidence_score(model, loader=valid_loader, use_gpu_index=config.use_gpu_index, batch_size=config.batch_size, outpu_file_path=f'{logdir}/prediction-Confidence-best.csv')
             print(f'Saving model with loss {valid_loss_ema:.4f}'.format(valid_loss_ema))
             nonImprove_epochs = 0
         else:
@@ -220,12 +222,13 @@ def main(logdir):
     
     torch.save(model.state_dict(), f'{logdir}/last_{config.model_path}')
     torch.save(ema.state_dict(), f'{logdir}/last_{config.ema_path}')
+    print(f'Best epoch: {best_epoch} with loss {best_loss}')
 
     writer.flush()
     writer.close()
 
     # Step 6 : Explanation & Visualization
-    get_confidence_score(model, loader=valid_loader, use_gpu_index=config.use_gpu_index, batch_size=config.batch_size)
+    get_confidence_score(model, loader=valid_loader, use_gpu_index=config.use_gpu_index, batch_size=config.batch_size, outpu_file_path=f'{logdir}/last-prediction-Confidence.csv')
 
 ###################################################################################
 
@@ -413,6 +416,9 @@ if __name__ == '__main__':
     # 
     assert not os.path.isdir(os.path.join(os.getcwd(), args.logdir)), "Already has a folder with the same name"
     os.mkdir(args.logdir)
+
+    shutil.copy('./config.py', f'{args.logdir}/config.py')
+
     main(args.logdir)
 
 
