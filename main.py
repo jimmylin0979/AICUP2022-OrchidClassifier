@@ -26,6 +26,9 @@ from ptflops import get_model_complexity_info
 from tqdm import tqdm
 
 #
+import argparse
+
+#
 import os
 
 #
@@ -43,10 +46,10 @@ from optim.scheduler import GradualWarmupScheduler
 config = DefualtConfig()
 device = torch.device(f'cuda:{config.use_gpu_index}' if torch.cuda.is_available() else'cpu') if config.use_gpu_index != -1 else torch.device('cpu')
 
-def main(**kwargs):
+def main(logdir):
 
     # Step 1 : prepare logging writer
-    writer = SummaryWriter()
+    writer = SummaryWriter(log_dir=logdir)
 
     # Step 2 : 
     print(config.model_name)
@@ -113,8 +116,8 @@ def main(**kwargs):
 
     # scheduler_warmup is chained with schduler_steplr
     # scheduler_steplr = StepLR(optimizer, step_size=10, gamma=0.1)
-    scheduler_steplr = CosineAnnealingLR(optimizer, T_max=20)
-    # scheduler_steplr = ExponentialLR(optimizer, gamma=0.9)
+    # scheduler_steplr = CosineAnnealingLR(optimizer, T_max=20)
+    scheduler_steplr = ExponentialLR(optimizer, gamma=0.9)
     # if config.lr_warmup_epoch > 0:
     scheduler_warmup = GradualWarmupScheduler(optimizer, multiplier=1, total_epoch=config.lr_warmup_epoch, after_scheduler=scheduler_steplr)
 
@@ -130,6 +133,9 @@ def main(**kwargs):
     # this zero gradient update is needed to avoid a warning message, issue #8.
     optimizer.zero_grad()
     optimizer.step()
+
+    #
+    assert not(config.do_cutMix and config.do_MixUp), "Only support one of the mix-based augmentation"
 
     for epoch in range(config.start_epoch, config.start_epoch + config.num_epochs):
 
@@ -148,9 +154,9 @@ def main(**kwargs):
             collator = CutMixCollator(config.cutMix_alpha)
         
         train_loader = DataLoader(ds_train, batch_size=config.batch_size, shuffle=True, collate_fn=collator, num_workers=config.num_workers, pin_memory=True)
-        if epoch == 35:
-            torch.save(model.state_dict(), f'{config.model_path[:-4]}_normal.pth')
-            torch.save(ema.state_dict(), f'{config.ema_path[:-4]}_normal.pth')
+        # if epoch == 35:
+        #     torch.save(model.state_dict(), f'{config.model_path[:-4]}_normal.pth')
+        #     torch.save(ema.state_dict(), f'{config.ema_path[:-4]}_normal.pth')
             
         if epoch >= 35 and config.do_semi:
             # Obtain pseudo-labels for unlabeled data using trained model.
@@ -201,8 +207,8 @@ def main(**kwargs):
         if valid_loss_ema < best_loss:
             best_loss = valid_loss_ema
             best_epoch = epoch
-            torch.save(model.state_dict(), config.model_path)
-            torch.save(ema.state_dict(), config.ema_path)
+            torch.save(model.state_dict(), f'{logdir}/{config.model_path}')
+            torch.save(ema.state_dict(), f'{logdir}/{config.ema_path}')
             print(f'Saving model with loss {valid_loss_ema:.4f}'.format(valid_loss_ema))
             nonImprove_epochs = 0
         else:
@@ -211,6 +217,9 @@ def main(**kwargs):
         # Stop training if your model stops improving for "config['early_stop']" epochs.    
         if nonImprove_epochs >= config.earlyStop_interval:
             break
+    
+    torch.save(model.state_dict(), f'{logdir}/last_{config.model_path}')
+    torch.save(ema.state_dict(), f'{logdir}/last_{config.ema_path}')
 
     writer.flush()
     writer.close()
@@ -285,7 +294,8 @@ def train(model, train_loader, criterion, optimizer, ema):
             else:
                 labels = labels.to(device)
 
-        # labels = labels.to(device)
+        if config.do_MixUp:
+            labels = labels.to(device)
 
         if config.do_MixUp:
             imgs, targets_a, targets_b, lam = mixup_data(imgs, labels, alpha=0.2, use_cuda=torch.cuda.is_available())
@@ -386,24 +396,24 @@ def valid(model, valid_loader, criterion, ema=None):
 
 if __name__ == '__main__':
 
-    # # parser = ArgumentParser(description='AICUP - Orchid Classifier')
+    parser = argparse.ArgumentParser(description='AICUP - Orchid Classifier')
 
-    # # parser.add_argument('--lr', default=2e-5, type=float,
-    # #                     help='Base learning rate')
-    # # parser.add_argument('--bs', default=32, type=int, help='Batch size')
-    # # parser.add_argument('--e', default=50, type=int, help='Numbers of epoch')
-    # # parser.add_argument('--v', default=50, type=int, help='Experiment version')
-    # # parser.add_argument('--device', default=-1, type=int,
-    # #                     help='GPU index, -1 for cpu')
+    # parser.add_argument('--lr', default=2e-5, type=float,
+    #                     help='Base learning rate')
+    # parser.add_argument('--bs', default=32, type=int, help='Batch size')
+    # parser.add_argument('--e', default=50, type=int, help='Numbers of epoch')
+    # parser.add_argument('--v', default=50, type=int, help='Experiment version')
+    # parser.add_argument('--device', default=-1, type=int,
+    #                     help='GPU index, -1 for cpu')
+    parser.add_argument('--logdir', default='model', type=str, required=True, 
+                                help='The folder to store the training stats of current model')
 
-    # # args = parser.parse_args()
+    args = parser.parse_args()
 
-    # #
-    # fire.Fire({
-    #     'main' : main
-    # })
-
-    main()
+    # 
+    assert not os.path.isdir(os.path.join(os.getcwd(), args.logdir)), "Already has a folder with the same name"
+    os.mkdir(args.logdir)
+    main(args.logdir)
 
 
 ###################################################################################
