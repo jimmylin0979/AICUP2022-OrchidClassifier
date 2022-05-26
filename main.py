@@ -353,6 +353,8 @@ def valid(model, valid_loader, criterion, ema=None):
     # Make sure the model is in eval mode so that some modules like dropout are disabled and work normally.
     model.eval()
 
+    acc, loss = [], []
+
     if ema is not None:
 
         with ema.average_parameters():
@@ -369,10 +371,10 @@ def valid(model, valid_loader, criterion, ema=None):
                     logits = model(imgs.to(device))
 
                 # We can still compute the loss (but not the gradient).
-                loss = criterion(logits, labels.to(device))
+                loss.append(criterion(logits, labels.to(device)).item())
 
                 # Compute the accuracy for current batch.
-                acc = (logits.argmax(dim=-1) == labels.to(device)).float().mean()
+                acc.append((logits.argmax(dim=-1) == labels.to(device)).float().mean().item())
     
     else:
         
@@ -388,12 +390,12 @@ def valid(model, valid_loader, criterion, ema=None):
                 logits = model(imgs.to(device))
 
             # We can still compute the loss (but not the gradient).
-            loss = criterion(logits, labels.to(device))
+            loss.append(criterion(logits, labels.to(device)).item())
 
             # Compute the accuracy for current batch.
-            acc = (logits.argmax(dim=-1) == labels.to(device)).float().mean()
+            acc.append((logits.argmax(dim=-1) == labels.to(device)).float().mean().item())
 
-    return acc.item(), loss.item()
+    return np.mean(acc), np.mean(loss)
 
 ###################################################################################
 
