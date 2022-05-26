@@ -128,7 +128,7 @@ def main(logdir):
 
     # Step 5
     history = {'train_acc' : [], 'train_loss' : [], 'valid_acc' : [], 'valid_loss' : []}
-    best_epoch, best_loss = 0, 1e100
+    best_epoch, best_loss, best_acc = 0, 1e100, 0
     nonImprove_epochs = 0
 
     # this zero gradient update is needed to avoid a warning message, issue #8.
@@ -159,7 +159,7 @@ def main(logdir):
         #     torch.save(model.state_dict(), f'{config.model_path[:-4]}_normal.pth')
         #     torch.save(ema.state_dict(), f'{config.ema_path[:-4]}_normal.pth')
             
-        if epoch >= 35 and config.do_semi:
+        if epoch >= config.semi_start_epoch and config.do_semi:
             # Obtain pseudo-labels for unlabeled data using trained model.
             print(f"[ Train | Start pseudo labeling]")
             pseudo_set = get_pseudo_labels(model, ds_unlabeled)
@@ -207,6 +207,7 @@ def main(logdir):
         # if the model improves, save a checkpoint at this epoch
         if valid_loss_ema < best_loss:
             best_loss = valid_loss_ema
+            best_acc = valid_acc_ema
             best_epoch = epoch
             torch.save(model.state_dict(), f'{logdir}/{config.model_path}')
             torch.save(ema.state_dict(), f'{logdir}/{config.ema_path}')
@@ -222,7 +223,7 @@ def main(logdir):
     
     torch.save(model.state_dict(), f'{logdir}/last_{config.model_path}')
     torch.save(ema.state_dict(), f'{logdir}/last_{config.ema_path}')
-    print(f'Best epoch: {best_epoch} with loss {best_loss}')
+    print(f'Best epoch: {best_epoch} with loss {best_loss:.4f} and acc {best_acc:.4f}')
 
     writer.flush()
     writer.close()

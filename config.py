@@ -1,7 +1,3 @@
-
-from tkinter.tix import Tree
-
-
 class DefualtConfig(object):
 
     ###################################################################
@@ -27,10 +23,11 @@ class DefualtConfig(object):
     ###################################################################
     # Training
     start_epoch = 0
-    num_epochs = 50
+    num_epochs = 100
     earlyStop_interval = 600
 
     do_semi = False
+    semi_start_epoch = 40
 
     batch_size = 16
     lr = 5e-5
