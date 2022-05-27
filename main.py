@@ -1,4 +1,5 @@
 #
+from random import random
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
@@ -118,6 +119,7 @@ def main(logdir):
     # scheduler_warmup is chained with schduler_steplr
     # scheduler_steplr = StepLR(optimizer, step_size=10, gamma=0.1)
     scheduler_steplr = CosineAnnealingLR(optimizer, T_max=20)
+    # scheduler_steplr = CosineAnnealingLR(optimizer, T_max=config.num_epochs - config.lr_warmup_epoch + 1)
     # scheduler_steplr = ExponentialLR(optimizer, gamma=0.9)
     # if config.lr_warmup_epoch > 0:
     scheduler_warmup = GradualWarmupScheduler(optimizer, multiplier=1, total_epoch=config.lr_warmup_epoch, after_scheduler=scheduler_steplr)
@@ -128,7 +130,7 @@ def main(logdir):
 
     # Step 5
     history = {'train_acc' : [], 'train_loss' : [], 'valid_acc' : [], 'valid_loss' : []}
-    best_epoch, best_loss, best_acc = 0, 1e100, 0
+    best_epoch, best_loss, best_acc_ema, best_acc = 0, 1e100, 0, 0
     nonImprove_epochs = 0
 
     # this zero gradient update is needed to avoid a warning message, issue #8.
@@ -175,7 +177,7 @@ def main(logdir):
         # 
         train_criterion = criterion
         if config.do_cutMix:
-            train_criterion = CutMixCriterion(reduction='mean')
+            train_criterion = CutMixCriterion(reduction='mean', label_smoothing=0.1)
 
         train_acc, train_loss = train(model, train_loader, train_criterion, optimizer, ema)
         print(f"[ Train | {epoch + 1:03d}/{config.num_epochs:03d} ] loss = {train_loss:.5f}, acc = {train_acc:.5f}")
@@ -203,16 +205,24 @@ def main(logdir):
         writer.add_scalar("Valid/valid_loss", valid_loss, epoch)
         writer.add_scalar("Valid/valid_loss_ema", valid_loss_ema, epoch)
 
-        # EarlyStop
-        # if the model improves, save a checkpoint at this epoch
-        if valid_loss_ema < best_loss:
-            best_loss = valid_loss_ema
-            best_acc = valid_acc_ema
-            best_epoch = epoch
+        #
+        if valid_acc > best_acc:
+            best_acc = valid_acc
             torch.save(model.state_dict(), f'{logdir}/{config.model_path}')
             torch.save(ema.state_dict(), f'{logdir}/{config.ema_path}')
             get_confidence_score(model, loader=valid_loader, use_gpu_index=config.use_gpu_index, batch_size=config.batch_size, outpu_file_path=f'{logdir}/prediction-Confidence-best.csv')
-            print(f'Saving model with loss {valid_loss_ema:.4f}'.format(valid_loss_ema))
+            print(f'Saving model with acc {valid_acc:.4f} and loss {valid_loss:.4f}')
+
+        # EarlyStop
+        # if the model improves, save a checkpoint at this epoch
+        if valid_acc_ema > best_acc_ema:
+            best_loss = valid_loss_ema
+            best_acc_ema = valid_acc_ema
+            best_epoch = epoch
+            torch.save(model.state_dict(), f'{logdir}/ema_{config.model_path}')
+            torch.save(ema.state_dict(), f'{logdir}/ema_{config.ema_path}')
+            get_confidence_score(model, loader=valid_loader, use_gpu_index=config.use_gpu_index, batch_size=config.batch_size, outpu_file_path=f'{logdir}/prediction-Confidence-best-ema.csv')
+            print(f'Saving model with acc {valid_acc_ema:.4f} and loss {valid_loss_ema:.4f} (EMA)')
             nonImprove_epochs = 0
         else:
             nonImprove_epochs += 1
@@ -223,7 +233,7 @@ def main(logdir):
     
     torch.save(model.state_dict(), f'{logdir}/last_{config.model_path}')
     torch.save(ema.state_dict(), f'{logdir}/last_{config.ema_path}')
-    print(f'Best epoch: {best_epoch} with loss {best_loss:.4f} and acc {best_acc:.4f}')
+    print(f'Best epoch: {best_epoch} with loss {best_loss:.4f} and acc {best_acc_ema:.4f}')
 
     writer.flush()
     writer.close()
@@ -239,7 +249,7 @@ def get_train_valid_ds(ds):
     valid_split = config.train_valid_split
 
     indices = list(range(len(ds)))  # indices of the dataset
-    train_indices, valid_indices = train_test_split(indices, test_size=valid_split, stratify=ds.targets)
+    train_indices, valid_indices = train_test_split(indices, test_size=valid_split, stratify=ds.targets, random_state=42)
     
     # Creating sub dataset from valid indices
     # Do not shuffle valid dataset, let the image in order
@@ -331,9 +341,9 @@ def train(model, train_loader, criterion, optimizer, ema):
         # # Below is what matrix should look like : 
         # #    [ x_ratio, 0 ] [offset_X]
         # #    [ 0, y_ratio ] [offset_y]
-        if config.model_name == "STN_ViT":
-            model.fc_loc[-1].weight.grad[1].zero_()
-            model.fc_loc[-1].weight.grad[3].zero_()
+        # if config.model_name == "STN_ViT":
+        #     model.fc_loc[-1].weight.grad[1].zero_()
+        #     model.fc_loc[-1].weight.grad[3].zero_()
 
         # Update the parameters with computed gradients.
         optimizer.step()

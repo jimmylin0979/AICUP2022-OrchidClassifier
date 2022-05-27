@@ -12,8 +12,8 @@ class DefualtConfig(object):
     num_classes = 219
 
     # only one of them can be true
-    do_cutMix = False
-    do_MixUp = True
+    do_cutMix = True
+    do_MixUp = False
 
     cutMix_alpha = 1.0
 
@@ -23,7 +23,7 @@ class DefualtConfig(object):
     ###################################################################
     # Training
     start_epoch = 0
-    num_epochs = 100
+    num_epochs = 105
     earlyStop_interval = 600
 
     do_semi = False

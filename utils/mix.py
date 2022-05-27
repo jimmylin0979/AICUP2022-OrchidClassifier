@@ -62,8 +62,8 @@ class CutMixCollator:
 
 
 class CutMixCriterion:
-    def __init__(self, reduction):
-        self.criterion = nn.CrossEntropyLoss(reduction=reduction)
+    def __init__(self, reduction, label_smoothing=0.1):
+        self.criterion = nn.CrossEntropyLoss(reduction=reduction, label_smoothing=0.1)
 
     def __call__(self, preds, targets):
         targets1, targets2, lam = targets
