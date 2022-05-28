@@ -1,6 +1,3 @@
-from cv2 import resize
-
-
 class DefualtConfig(object):
 
     ###################################################################
