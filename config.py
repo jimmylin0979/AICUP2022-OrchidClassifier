@@ -40,6 +40,7 @@ class DefualtConfig(object):
     batch_size = 16
     lr = 5e-5
     lr_warmup_epoch = 5
+    cosine_tmax = 20
 
     ###################################################################
     # GPU Settings

@@ -118,7 +118,7 @@ def main(logdir):
 
     # scheduler_warmup is chained with schduler_steplr
     # scheduler_steplr = StepLR(optimizer, step_size=10, gamma=0.1)
-    scheduler_steplr = CosineAnnealingLR(optimizer, T_max=20)
+    scheduler_steplr = CosineAnnealingLR(optimizer, T_max=config.cosine_tmax)
     # scheduler_steplr = CosineAnnealingLR(optimizer, T_max=config.num_epochs - config.lr_warmup_epoch + 1)
     # scheduler_steplr = ExponentialLR(optimizer, gamma=0.9)
     # if config.lr_warmup_epoch > 0:
