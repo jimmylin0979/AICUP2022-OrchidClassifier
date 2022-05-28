@@ -57,7 +57,8 @@ class STN_ViT(nn.Module):
 
         ###############################################
         # ViT
-        pretrained_model = 'google/vit-base-patch16-224-in21k'
+        # pretrained_model = 'google/vit-base-patch16-224-in21k'
+        pretrained_model = config.pretrained_model
         self.feature_extractor = ViTFeatureExtractor.from_pretrained(pretrained_model)
         self.vit = ViTModel.from_pretrained(pretrained_model)
         self.dropout = nn.Dropout(0.1)

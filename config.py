@@ -1,11 +1,23 @@
+from cv2 import resize
+
+
 class DefualtConfig(object):
 
     ###################################################################
     # Model
     # model_name = 'STN_ViT'
-    # model_name = 'ConvNeXt'
-    model_name = 'Swin_ViT'
+    # pretrained_model = 'google/vit-base-patch16-224-in21k'
     
+    # model_name = 'ConvNeXt'
+    # pretrained_model = 'facebook/convnext-base-224'
+
+    model_name = 'Swin_ViT'
+    pretrained_model = 'microsoft/swin-base-patch4-window7-224'
+    
+    resize = 224
+
+    ###################################################################
+
     model_path = 'model.pth'
     ema_path = 'ema.pth'
     load_model = False

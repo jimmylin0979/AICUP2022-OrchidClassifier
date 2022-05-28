@@ -61,7 +61,8 @@ def main(logdir):
 
     # 
     # Metrics : FLOPs, Params
-    resize = (224, 224) if config.model_name != 'ConvNeXt' else (384, 384)
+    # resize = (224, 224) if config.model_name != 'ConvNeXt' else (384, 384)
+    resize = (config.resize, config.resize)
     macs, params = get_model_complexity_info(model, (3, resize[0], resize[1]), as_strings=True, print_per_layer_stat=False, verbose=False)
     print('pthflops : ')
     print('{:<30}  {:<8}'.format('Computational complexity: ', macs))

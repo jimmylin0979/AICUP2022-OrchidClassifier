@@ -25,8 +25,9 @@ class ConvNeXt(nn.Module):
         ###############################################
         # Model
         # pretrained_model = 'facebook/convnext-xlarge-384-22k-1k'
-        pretrained_model = 'facebook/convnext-base-224'
+        # pretrained_model = 'facebook/convnext-base-224'
         # pretrained_model = 'facebook/convnext-base-384'
+        pretrained_model = config.pretrained_model
         self.feature_extractor = ConvNextFeatureExtractor.from_pretrained(pretrained_model)
         self.model = ConvNextForImageClassification.from_pretrained(pretrained_model)
 

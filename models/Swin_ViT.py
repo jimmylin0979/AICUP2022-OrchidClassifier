@@ -24,7 +24,8 @@ class Swin_ViT(nn.Module):
 
         ###############################################
         # ViT
-        pretrained_model = 'microsoft/swin-base-patch4-window7-224'
+        # pretrained_model = 'microsoft/swin-base-patch4-window7-224'
+        pretrained_model = config.pretrained_model
         self.feature_extractor = AutoFeatureExtractor.from_pretrained(pretrained_model)
         self.model = SwinForImageClassification.from_pretrained(pretrained_model)
         # print(self.model.config)
