@@ -1,5 +1,4 @@
 #
-from random import random
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
@@ -39,7 +38,7 @@ from data.dataset import OrchidDataSet
 from config import DefualtConfig
 from utils import get_confidence_score
 from utils import mixup_data, mixup_criterion
-from utils import CutMixCollator, CutMixCriterion
+from utils import rand_bbox
 from utils.self_supervised import get_pseudo_labels
 from optim.scheduler import GradualWarmupScheduler
 
@@ -130,7 +129,7 @@ def main(logdir):
 
     # Step 5
     history = {'train_acc' : [], 'train_loss' : [], 'valid_acc' : [], 'valid_loss' : []}
-    best_epoch, best_loss, best_acc_ema, best_acc = 0, 1e100, 0, 0
+    best_epoch, best_epoch_ema, best_loss, best_acc_ema, best_acc = 0, 0, 1e100, 0, 0
     nonImprove_epochs = 0
 
     # this zero gradient update is needed to avoid a warning message, issue #8.
@@ -153,8 +152,8 @@ def main(logdir):
 
         # 
         collator = torch.utils.data.dataloader.default_collate
-        if config.do_cutMix:
-            collator = CutMixCollator(config.cutMix_alpha)
+        # if config.do_cutMix:
+        #     collator = CutMixCollator(config.cutMix_alpha)
         
         train_loader = DataLoader(ds_train, batch_size=config.batch_size, shuffle=True, collate_fn=collator, num_workers=config.num_workers, pin_memory=True)
         # if epoch == 35:
@@ -176,8 +175,8 @@ def main(logdir):
 
         # 
         train_criterion = criterion
-        if config.do_cutMix:
-            train_criterion = CutMixCriterion(reduction='mean', label_smoothing=0.1)
+        # if config.do_cutMix:
+        #     train_criterion = CutMixCriterion(reduction='mean', label_smoothing=0.1)
 
         train_acc, train_loss = train(model, train_loader, train_criterion, optimizer, ema)
         print(f"[ Train | {epoch + 1:03d}/{config.num_epochs:03d} ] loss = {train_loss:.5f}, acc = {train_acc:.5f}")
@@ -233,7 +232,8 @@ def main(logdir):
     
     torch.save(model.state_dict(), f'{logdir}/last_{config.model_path}')
     torch.save(ema.state_dict(), f'{logdir}/last_{config.ema_path}')
-    print(f'Best epoch: {best_epoch} with loss {best_loss:.4f} and acc {best_acc_ema:.4f}')
+    print(f'Best epoch: {best_epoch} with acc {best_acc:.4f}')
+    print(f'Best epoch: {best_epoch_ema} with acc {best_acc_ema:.4f} (EMA)')
 
     writer.flush()
     writer.close()
@@ -292,6 +292,8 @@ def train(model, train_loader, criterion, optimizer, ema):
     # Make sure the model is in train mode before training.
     model.train()
 
+    losses, accs = [], []
+
     # Iterate the training set by batches.
     for batch in tqdm(train_loader):
 
@@ -301,17 +303,29 @@ def train(model, train_loader, criterion, optimizer, ema):
         imgs, labels = batch
         imgs = imgs.to(device)
 
-        if config.do_cutMix:
-            if isinstance(labels, (tuple, list)):
-                targets1, targets2, lam = labels
-                labels = (targets1.to(device), targets2.to(device), lam)
-            else:
-                labels = labels.to(device)
+        target_a, target_b, lam = None, None, None
+        # do_mix = False
+        
+        r = np.random.rand(1)
+        do_mix = True if r < config.mix_prob else False
 
-        if config.do_MixUp:
+        if config.do_cutMix:
+            if config.beta > 0 and do_mix:
+                # generate mixed sample
+                do_mix = True
+                lam = np.random.beta(config.beta, config.beta)
+                rand_index = torch.randperm(imgs.size()[0]).cuda()
+                target_a = labels
+                target_b = labels[rand_index]
+                bbx1, bby1, bbx2, bby2 = rand_bbox(imgs.size(), lam)
+                imgs[:, :, bbx1:bbx2, bby1:bby2] = imgs[rand_index, :, bbx1:bbx2, bby1:bby2]
+                # adjust lambda to exactly match pixel ratio
+                lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (imgs.size()[-1] * imgs.size()[-2]))
+        else:
             labels = labels.to(device)
 
-        if config.do_MixUp:
+        if config.do_MixUp and do_mix:
+            labels = labels.to(device)
             imgs, targets_a, targets_b, lam = mixup_data(imgs, labels, alpha=0.2, use_cuda=torch.cuda.is_available())
             imgs, targets_a, targets_b = map(Variable, (imgs, targets_a, targets_b))
 
@@ -323,10 +337,15 @@ def train(model, train_loader, criterion, optimizer, ema):
         # loss = criterion(logits, labels.to(device))
 
         loss = None
-        if config.do_MixUp:
-            loss = mixup_criterion(criterion, logits, targets_a, targets_b, lam)
-        elif config.do_cutMix:
-            loss = criterion(logits, labels)
+        if do_mix:
+            if config.do_MixUp:
+                loss = mixup_criterion(criterion, logits, targets_a, targets_b, lam)
+            elif config.do_cutMix:
+                # loss = criterion(logits, labels)
+                target_a = target_a.to(device)
+                target_b = target_b.to(device)
+                # lam = lam.to(device)
+                loss = criterion(logits, target_a) * lam + criterion(logits, target_b) * (1. - lam)
         else:
             loss = criterion(logits, labels.to(device))
 
@@ -353,18 +372,20 @@ def train(model, train_loader, criterion, optimizer, ema):
         # grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=10)
 
         # Compute the accuracy for current batch.
-        acc = torch.tensor([0])
-        if not config.do_cutMix:        
-            acc = (logits.argmax(dim=-1) == labels.to(device)).float().mean()
+        # acc = torch.tensor([0])
+        # if not config.do_cutMix:        
+        acc = (logits.argmax(dim=-1) == labels.to(device)).float().mean()
+        accs.append(acc.item())
+        losses.append(loss.item())
 
-    return acc.item(), loss.item()
+    return np.mean(accs), np.mean(losses)
 
 def valid(model, valid_loader, criterion, ema=None):
     # ---------- Validation ----------
     # Make sure the model is in eval mode so that some modules like dropout are disabled and work normally.
     model.eval()
 
-    acc, loss = [], []
+    accs, losses = [], []
 
     if ema is not None:
 
@@ -382,10 +403,10 @@ def valid(model, valid_loader, criterion, ema=None):
                     logits = model(imgs.to(device))
 
                 # We can still compute the loss (but not the gradient).
-                loss.append(criterion(logits, labels.to(device)).item())
+                losses.append(criterion(logits, labels.to(device)).item())
 
                 # Compute the accuracy for current batch.
-                acc.append((logits.argmax(dim=-1) == labels.to(device)).float().mean().item())
+                accs.append((logits.argmax(dim=-1) == labels.to(device)).float().mean().item())
     
     else:
         
@@ -401,12 +422,12 @@ def valid(model, valid_loader, criterion, ema=None):
                 logits = model(imgs.to(device))
 
             # We can still compute the loss (but not the gradient).
-            loss.append(criterion(logits, labels.to(device)).item())
+            losses.append(criterion(logits, labels.to(device)).item())
 
             # Compute the accuracy for current batch.
-            acc.append((logits.argmax(dim=-1) == labels.to(device)).float().mean().item())
+            accs.append((logits.argmax(dim=-1) == labels.to(device)).float().mean().item())
 
-    return np.mean(acc), np.mean(loss)
+    return np.mean(accs), np.mean(losses)
 
 ###################################################################################
 

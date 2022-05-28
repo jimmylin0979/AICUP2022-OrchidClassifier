@@ -2,9 +2,9 @@ class DefualtConfig(object):
 
     ###################################################################
     # Model
-    model_name = 'STN_ViT'
+    # model_name = 'STN_ViT'
     # model_name = 'ConvNeXt'
-    # model_name = 'Swin_ViT'
+    model_name = 'Swin_ViT'
     
     model_path = 'model.pth'
     ema_path = 'ema.pth'
@@ -12,13 +12,12 @@ class DefualtConfig(object):
     num_classes = 219
 
     # only one of them can be true
-    do_cutMix = True
     do_MixUp = False
 
-    cutMix_alpha = 1.0
-
-    # Model : ViT
-    # pretrained_model = 'google/vit-base-patch16-224-in21k'
+    do_cutMix = True
+    beta = 1.0
+    
+    mix_prob = 0.2
 
     ###################################################################
     # Training
