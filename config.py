@@ -6,12 +6,17 @@ class DefualtConfig(object):
     # pretrained_model = 'google/vit-base-patch16-224-in21k'
     
     # model_name = 'ConvNeXt'
-    # pretrained_model = 'facebook/convnext-base-224'
+    # # pretrained_model = 'facebook/convnext-base-224'
+    # pretrained_model = 'facebook/convnext-base-384'
 
     model_name = 'Swin_ViT'
-    pretrained_model = 'microsoft/swin-base-patch4-window7-224'
+    # pretrained_model = 'microsoft/swin-base-patch4-window7-224'
+    pretrained_model = 'microsoft/swin-base-patch4-window12-384'
+
+    # model_name = 'CVT'
+    # pretrained_model = 'microsoft/cvt-w24-384-22k'
     
-    resize = 224
+    resize = 384
 
     ###################################################################
 
@@ -20,8 +25,7 @@ class DefualtConfig(object):
     load_model = False
     num_classes = 219
 
-    # only one of them can be true
-    do_MixUp = False
+    do_MixUp = True
 
     do_cutMix = True
     beta = 1.0
@@ -37,10 +41,10 @@ class DefualtConfig(object):
     do_semi = False
     semi_start_epoch = 40
 
-    batch_size = 16
+    batch_size = 8
     lr = 5e-5
     lr_warmup_epoch = 5
-    cosine_tmax = 20
+    cosine_tmax = 101
 
     ###################################################################
     # GPU Settings

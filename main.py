@@ -138,7 +138,7 @@ def main(logdir):
     optimizer.step()
 
     #
-    assert not(config.do_cutMix and config.do_MixUp), "Only support one of the mix-based augmentation"
+    # assert not(config.do_cutMix and config.do_MixUp), "Only support one of the mix-based augmentation"
 
     for epoch in range(config.start_epoch, config.start_epoch + config.num_epochs):
 
@@ -310,7 +310,16 @@ def train(model, train_loader, criterion, optimizer, ema):
         r = np.random.rand(1)
         do_mix = True if r < config.mix_prob else False
 
-        if config.do_cutMix:
+        r_mix_method = np.random.rand(1)
+        mix_method = 'cutmix'
+        if config.do_cutMix and config.do_MixUp:
+            mix_method = 'cutmix' if r_mix_method < 0.5 else 'mixup'
+        elif config.do_cutMix:
+            mix_method = 'cutmix'
+        elif config.do_MixUp:
+            mix_method = 'mixup'
+
+        if config.do_cutMix and mix_method == 'cutmix':
             if config.beta > 0 and do_mix:
                 # generate mixed sample
                 do_mix = True
@@ -325,7 +334,7 @@ def train(model, train_loader, criterion, optimizer, ema):
         else:
             labels = labels.to(device)
 
-        if config.do_MixUp and do_mix:
+        if config.do_MixUp and do_mix and mix_method == 'mixup':
             labels = labels.to(device)
             imgs, targets_a, targets_b, lam = mixup_data(imgs, labels, alpha=0.2, use_cuda=torch.cuda.is_available())
             imgs, targets_a, targets_b = map(Variable, (imgs, targets_a, targets_b))
@@ -338,10 +347,10 @@ def train(model, train_loader, criterion, optimizer, ema):
         # loss = criterion(logits, labels.to(device))
 
         loss = None
-        if do_mix:
-            if config.do_MixUp:
+        if (config.do_cutMix or config.do_MixUp) and do_mix:
+            if config.do_MixUp and mix_method == 'mixup':
                 loss = mixup_criterion(criterion, logits, targets_a, targets_b, lam)
-            elif config.do_cutMix:
+            elif config.do_cutMix and mix_method == 'cutmix':
                 # loss = criterion(logits, labels)
                 target_a = target_a.to(device)
                 target_b = target_b.to(device)
