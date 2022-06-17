@@ -2,10 +2,17 @@
 # Created by https://www.toptal.com/developers/gitignore/api/python,visualstudiocode
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,visualstudiocode
 
+### Reports ###
+/Report Template/
+
 ### Checkpoints ###
 saved
 checkpoints
 *pth
+
+prediction_*.csv
+rearrange_prediction_*.csv
+ensemble_*.csv
 
 ### DataSets ###
 data/training/*
